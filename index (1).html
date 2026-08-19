@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presensi Digital - SIPAM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .border-gold-glow { border: 1px solid rgba(212,175,55,0.5); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), 0 0 30px rgba(212,175,55,0.15); }
+        .text-gold { color: #d4af37; }
+
+        .scan-frame { position: absolute; inset: 0; pointer-events: none; }
+        .scan-corner { position: absolute; width: 34px; height: 34px; border-color: #d4af37; transition: border-color .3s ease; }
+        .scan-corner.tl { top: 10px; left: 10px; border-top: 4px solid; border-left: 4px solid; border-radius: 10px 0 0 0; }
+        .scan-corner.tr { top: 10px; right: 10px; border-top: 4px solid; border-right: 4px solid; border-radius: 0 10px 0 0; }
+        .scan-corner.bl { bottom: 10px; left: 10px; border-bottom: 4px solid; border-left: 4px solid; border-radius: 0 0 0 10px; }
+        .scan-corner.br { bottom: 10px; right: 10px; border-bottom: 4px solid; border-right: 4px solid; border-radius: 0 0 10px 0; }
+        .scan-frame.terkunci .scan-corner { border-color: #10b981; }
+
+        @keyframes scanline { 0% { top: 6%; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { top: 92%; opacity: 0; } }
+        .scan-line { position: absolute; left: 6%; right: 6%; height: 2px; background: linear-gradient(90deg, transparent, #d4af37, transparent); animation: scanline 2.6s ease-in-out infinite; }
+        .scan-frame.terkunci .scan-line { background: linear-gradient(90deg, transparent, #10b981, transparent); animation-play-state: paused; opacity: 0; }
+
+        .pulse-dot { animation: pulseDot 1.6s ease-in-out infinite; }
+        @keyframes pulseDot { 0%,100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+
+        .status-chip { transition: all .35s ease; }
+        video, canvas { transform: scaleX(-1); }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-[#022c22] to-[#064e3b] min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+
+    <div class="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] bg-[#fcf6ba] opacity-[0.08] rounded-full blur-[120px] pointer-events-none"></div>
+    <div class="absolute bottom-[-10%] right-[-5%] w-[600px] h-[600px] bg-[#d4af37] opacity-[0.12] rounded-full blur-[120px] pointer-events-none"></div>
+
+    <div class="w-full max-w-md bg-white/95 backdrop-blur-md rounded-3xl p-8 z-10 relative border-gold-glow">
+        <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#bf953f] via-[#fcf6ba] to-[#bf953f] rounded-t-3xl"></div>
+
+        <div class="text-center mb-6 mt-2">
+            <h1 class="text-2xl font-black text-[#022c22] tracking-tight">Presensi Digital</h1>
+            <p class="text-gray-500 text-xs font-bold uppercase tracking-widest mt-1">SIPAM · Al-Azhar Muncar</p>
+        </div>
+
+        <div class="mb-5">
+            <label class="block text-gray-700 text-[11px] font-black uppercase tracking-widest mb-2">NIPY Anda</label>
+            <input type="text" id="inputNipy" inputmode="numeric" placeholder="Masukkan NIPY" class="w-full px-4 py-3.5 bg-gray-50 border border-emerald-100 rounded-xl text-[#022c22] outline-none focus:border-[#d4af37] focus:ring-4 focus:ring-[#d4af37]/10 font-mono font-bold text-center text-lg tracking-widest transition-all">
+        </div>
+
+        <div class="relative w-full aspect-square rounded-2xl overflow-hidden bg-[#022c22] mb-5 shadow-inner">
+            <video id="videoLive" autoplay muted playsinline class="w-full h-full object-cover"></video>
+            <canvas id="canvasOverlay" class="absolute inset-0 w-full h-full"></canvas>
+            <div id="scanFrame" class="scan-frame">
+                <div class="scan-corner tl"></div><div class="scan-corner tr"></div>
+                <div class="scan-corner bl"></div><div class="scan-corner br"></div>
+                <div class="scan-line"></div>
+            </div>
+            <div id="overlayPesanKamera" class="absolute inset-0 flex items-center justify-center bg-[#022c22] text-emerald-100 text-sm font-bold text-center p-6">
+                Mengaktifkan kamera & model pendeteksi wajah...
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-6">
+            <div id="chipWajah" class="status-chip flex items-center gap-2 bg-gray-100 border border-gray-200 rounded-xl px-3 py-3">
+                <span class="w-2.5 h-2.5 rounded-full bg-gray-400 pulse-dot" id="dotWajah"></span>
+                <div class="leading-tight">
+                    <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Wajah</p>
+                    <p class="text-[12px] font-bold text-gray-600" id="teksWajah">Mendeteksi...</p>
+                </div>
+            </div>
+            <div id="chipLokasi" class="status-chip flex items-center gap-2 bg-gray-100 border border-gray-200 rounded-xl px-3 py-3">
+                <span class="w-2.5 h-2.5 rounded-full bg-gray-400 pulse-dot" id="dotLokasi"></span>
+                <div class="leading-tight">
+                    <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Lokasi</p>
+                    <p class="text-[12px] font-bold text-gray-600" id="teksLokasi">Mencari GPS...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <button type="button" id="btnMasuk" onclick="pilihJenis('Masuk')" class="py-3 rounded-xl font-black text-sm border-2 border-[#022c22] bg-[#022c22] text-white transition-all">Presensi Masuk</button>
+            <button type="button" id="btnPulang" onclick="pilihJenis('Pulang')" class="py-3 rounded-xl font-black text-sm border-2 border-gray-200 text-gray-500 transition-all">Presensi Pulang</button>
+        </div>
+
+        <button id="btnRekam" onclick="rekamPresensi()" disabled class="w-full bg-gray-300 text-gray-500 font-black text-lg py-4 rounded-xl shadow-inner cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-300">
+            <span id="labelBtnRekam">Menyiapkan Sistem...</span>
+        </button>
+
+        <div id="pesanHasil" class="hidden mt-4 text-sm font-bold p-4 rounded-xl text-center"></div>
+
+        <p class="text-center text-[10px] text-gray-400 font-medium mt-5">Wajah &amp; lokasi Anda direkam sebagai bukti kehadiran yang sah.</p>
+    </div>
+
+    <script>
+        // =========================================================
+        // WAJIB DIISI: URL Web App Apps Script Anda (yang diakhiri /exec)
+        // Ambil dari Deploy > Manage deployments di project Apps Script.
+        // Halaman ini SENGAJA di-hosting terpisah (bukan lewat doGet
+        // Apps Script), karena Apps Script membungkus HTML dalam iframe
+        // tersandbox yang memblokir akses kamera (getUserMedia).
+        // =========================================================
+        const URL_APPS_SCRIPT = 'https://script.google.com/macros/s/AKfycbwkMlKelC7ORqJYAu1zGLfX2UbXH15h9qw3JnzdHkaZk6B5xAwap6MSEt3x-Lkn9Q/exec';
+
+        const KANTOR_LAT = -8.425941;      // SESUAIKAN: latitude titik kantor
+        const KANTOR_LNG = 114.328326;     // SESUAIKAN: longitude titik kantor
+        const RADIUS_METER = 200;          // SESUAIKAN: radius toleransi (meter), samakan dengan Code.gs
+        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
+
+        let jenisPresensi = 'Masuk';
+        let wajahTerdeteksi = false;
+        let lokasiValid = false;
+        let jarakSaatIni = null;
+        let videoEl, canvasEl, ctx;
+
+        function pilihJenis(jenis) {
+            jenisPresensi = jenis;
+            const bMasuk = document.getElementById('btnMasuk');
+            const bPulang = document.getElementById('btnPulang');
+            if (jenis === 'Masuk') {
+                bMasuk.className = "py-3 rounded-xl font-black text-sm border-2 border-[#022c22] bg-[#022c22] text-white transition-all";
+                bPulang.className = "py-3 rounded-xl font-black text-sm border-2 border-gray-200 text-gray-500 transition-all";
+            } else {
+                bPulang.className = "py-3 rounded-xl font-black text-sm border-2 border-[#022c22] bg-[#022c22] text-white transition-all";
+                bMasuk.className = "py-3 rounded-xl font-black text-sm border-2 border-gray-200 text-gray-500 transition-all";
+            }
+        }
+
+        function hitungJarakMeter(lat1, lng1, lat2, lng2) {
+            const R = 6371000;
+            const toRad = d => d * Math.PI / 180;
+            const dLat = toRad(lat2 - lat1);
+            const dLng = toRad(lng2 - lng1);
+            const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function mulaiPantauLokasi() {
+            if (!navigator.geolocation) { setStatusLokasi(false, 'Perangkat tidak mendukung GPS'); return; }
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    const { latitude, longitude } = pos.coords;
+                    jarakSaatIni = Math.round(hitungJarakMeter(latitude, longitude, KANTOR_LAT, KANTOR_LNG));
+                    window._koordinatTerakhir = { lat: latitude, lng: longitude };
+                    if (jarakSaatIni <= RADIUS_METER) setStatusLokasi(true, `Dalam area (${jarakSaatIni}m)`);
+                    else setStatusLokasi(false, `Di luar area (${jarakSaatIni}m)`);
+                    perbaruiTombolRekam();
+                },
+                (err) => { setStatusLokasi(false, 'Izin lokasi ditolak'); },
+                { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+            );
+        }
+
+        function setStatusLokasi(valid, teks) {
+            lokasiValid = valid;
+            document.getElementById('teksLokasi').innerText = teks;
+            const dot = document.getElementById('dotLokasi');
+            const chip = document.getElementById('chipLokasi');
+            if (valid) { dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500'; chip.className = 'status-chip flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-3'; }
+            else { dot.className = 'w-2.5 h-2.5 rounded-full bg-red-400 pulse-dot'; chip.className = 'status-chip flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-3'; }
+        }
+
+        async function mulaiKamera() {
+            videoEl = document.getElementById('videoLive');
+            canvasEl = document.getElementById('canvasOverlay');
+            ctx = canvasEl.getContext('2d');
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 480, height: 480 }, audio: false });
+                videoEl.srcObject = stream;
+                await new Promise(resolve => videoEl.onloadedmetadata = resolve);
+                document.getElementById('overlayPesanKamera').innerText = 'Memuat model pendeteksi wajah...';
+
+                await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+
+                document.getElementById('overlayPesanKamera').classList.add('hidden');
+                canvasEl.width = videoEl.videoWidth; canvasEl.height = videoEl.videoHeight;
+
+                mulaiPantauLokasi();
+                setInterval(deteksiWajahLoop, 350);
+            } catch (e) {
+                document.getElementById('overlayPesanKamera').innerText = 'Gagal mengakses kamera: ' + e.message;
+            }
+        }
+
+        async function deteksiWajahLoop() {
+            if (!videoEl || videoEl.readyState !== 4) return;
+            const opsi = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+            const hasil = await faceapi.detectSingleFace(videoEl, opsi);
+            ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+            if (hasil) {
+                wajahTerdeteksi = true;
+                setStatusWajah(true, 'Wajah terdeteksi');
+                document.getElementById('scanFrame').classList.add('terkunci');
+                const { x, y, width, height } = hasil.box;
+                ctx.strokeStyle = '#10b981'; ctx.lineWidth = 3; ctx.strokeRect(x, y, width, height);
+            } else {
+                wajahTerdeteksi = false;
+                setStatusWajah(false, 'Posisikan wajah di dalam bingkai');
+                document.getElementById('scanFrame').classList.remove('terkunci');
+            }
+            perbaruiTombolRekam();
+        }
+
+        function setStatusWajah(valid, teks) {
+            document.getElementById('teksWajah').innerText = teks;
+            const dot = document.getElementById('dotWajah');
+            const chip = document.getElementById('chipWajah');
+            if (valid) { dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500'; chip.className = 'status-chip flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-3'; }
+            else { dot.className = 'w-2.5 h-2.5 rounded-full bg-gray-400 pulse-dot'; chip.className = 'status-chip flex items-center gap-2 bg-gray-100 border border-gray-200 rounded-xl px-3 py-3'; }
+        }
+
+        function perbaruiTombolRekam() {
+            const btn = document.getElementById('btnRekam');
+            const label = document.getElementById('labelBtnRekam');
+            const nipy = document.getElementById('inputNipy').value.trim();
+
+            if (wajahTerdeteksi && lokasiValid && nipy !== '') {
+                btn.disabled = false;
+                btn.className = "w-full bg-gradient-to-r from-[#d4af37] to-[#b38728] hover:from-[#b38728] hover:to-[#d4af37] text-white font-black text-lg py-4 rounded-xl shadow-[0_10px_20px_-10px_rgba(212,175,55,0.6)] flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.02]";
+                label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
+            } else {
+                btn.disabled = true;
+                btn.className = "w-full bg-gray-300 text-gray-500 font-black text-lg py-4 rounded-xl shadow-inner cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-300";
+                label.innerText = !nipy ? 'Isi NIPY terlebih dahulu' : (!wajahTerdeteksi ? 'Menunggu wajah terdeteksi...' : 'Menunggu lokasi valid...');
+            }
+        }
+        document.getElementById('inputNipy').addEventListener('input', perbaruiTombolRekam);
+
+        // ---------- REKAM: kirim ke Apps Script (URL diri sendiri) lewat fetch() ----------
+        function rekamPresensi() {
+            const btn = document.getElementById('btnRekam');
+            const label = document.getElementById('labelBtnRekam');
+            const pesan = document.getElementById('pesanHasil');
+            const nipy = document.getElementById('inputNipy').value.trim();
+
+            btn.disabled = true;
+            label.innerText = 'Menyimpan presensi... ⏳';
+            pesan.classList.add('hidden');
+
+            const canvasFoto = document.createElement('canvas');
+            canvasFoto.width = videoEl.videoWidth; canvasFoto.height = videoEl.videoHeight;
+            const ctxFoto = canvasFoto.getContext('2d');
+            ctxFoto.translate(canvasFoto.width, 0); ctxFoto.scale(-1, 1);
+            ctxFoto.drawImage(videoEl, 0, 0, canvasFoto.width, canvasFoto.height);
+            const fotoBase64 = canvasFoto.toDataURL('image/jpeg', 0.85);
+
+            const payload = {
+                nipy: nipy,
+                jenis: jenisPresensi,
+                latitude: window._koordinatTerakhir ? window._koordinatTerakhir.lat : null,
+                longitude: window._koordinatTerakhir ? window._koordinatTerakhir.lng : null,
+                jarakMeter: jarakSaatIni,
+                foto: fotoBase64
+            };
+
+            // Catatan teknis: Content-Type 'text/plain' sengaja dipakai (bukan application/json)
+            // supaya browser TIDAK mengirim preflight OPTIONS request, karena Apps Script
+            // tidak selalu merespons preflight dengan benar. Data tetap JSON di dalamnya.
+            fetch(URL_APPS_SCRIPT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(res => {
+                label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
+                pesan.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-emerald-50', 'text-emerald-700');
+                if (res.success) {
+                    pesan.classList.add('bg-emerald-50', 'text-emerald-700');
+                    pesan.innerText = '✅ ' + res.message;
+                    document.getElementById('inputNipy').value = '';
+                } else {
+                    pesan.classList.add('bg-red-50', 'text-red-600');
+                    pesan.innerText = '⚠️ ' + res.message;
+                }
+                perbaruiTombolRekam();
+            })
+            .catch(err => {
+                label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
+                pesan.classList.remove('hidden');
+                pesan.className = 'mt-4 text-sm font-bold p-4 rounded-xl text-center bg-red-50 text-red-600';
+                pesan.innerText = '⚠️ Gagal terhubung ke server: ' + err.message;
+                perbaruiTombolRekam();
+            });
+        }
+
+        mulaiKamera();
+    </script>
+</body>
+</html>
