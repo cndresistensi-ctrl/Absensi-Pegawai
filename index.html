@@ -34,9 +34,28 @@
 
         .status-chip { transition: all .35s ease; }
         video, canvas { transform: scaleX(-1); }
+
+        #splashScreen { transition: opacity .5s ease, visibility .5s ease; }
+        #splashScreen.tersembunyi { opacity: 0; visibility: hidden; pointer-events: none; }
+        @keyframes splashPulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: .85; } }
+        .splash-logo { animation: splashPulse 1.6s ease-in-out infinite; }
+
+        @keyframes centangMuncul { 0% { stroke-dashoffset: 48; } 100% { stroke-dashoffset: 0; } }
+        @keyframes lingkaranMuncul { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+        .lingkaran-sukses { animation: lingkaranMuncul .5s cubic-bezier(.34,1.56,.64,1) forwards; }
+        .centang-sukses { stroke-dasharray: 48; stroke-dashoffset: 48; animation: centangMuncul .4s ease .35s forwards; }
+
+        @keyframes kartuMasuk { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .kartu-animasi { animation: kartuMasuk .3s ease; }
     </style>
 </head>
 <body class="bg-gradient-to-br from-[#022c22] to-[#064e3b] flex items-center justify-center p-2 sm:p-4 relative overflow-hidden">
+
+    <div id="splashScreen" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-[#022c22] to-[#064e3b]">
+        <img src="https://i.ibb.co.com/v40vx8y4/52583ff7-d459-4803-af74-dec0cbc4be0b.png" alt="Logo" class="splash-logo w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-2 border-[#d4af37] shadow-lg mb-4">
+        <p class="text-white font-black text-lg tracking-tight">Presensi Digital</p>
+        <p class="text-emerald-200/70 text-[10px] font-bold uppercase tracking-widest mt-1">SIPAM · Al-Azhar Muncar</p>
+    </div>
 
     <div class="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] bg-[#fcf6ba] opacity-[0.08] rounded-full blur-[120px] pointer-events-none"></div>
     <div class="absolute bottom-[-10%] right-[-5%] w-[600px] h-[600px] bg-[#d4af37] opacity-[0.12] rounded-full blur-[120px] pointer-events-none"></div>
@@ -47,12 +66,14 @@
         <div class="text-center mb-3 sm:mb-6 mt-1 sm:mt-2">
             <img src="https://i.ibb.co.com/v40vx8y4/52583ff7-d459-4803-af74-dec0cbc4be0b.png" alt="Logo Al-Azhar Muncar" class="w-14 h-14 sm:w-20 sm:h-20 mx-auto mb-2 rounded-full object-cover border-2 border-[#d4af37] shadow-md">
             <h1 class="text-lg sm:text-2xl font-black text-[#022c22] tracking-tight">Presensi Digital</h1>
-            <p class="text-gray-500 text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-1">SIPAM · Al-Azhar Muncar</p>
+            <p class="text-gray-500 text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-1">SIPAM · ALAMUN</p>
+            <p id="jamRealtime" class="text-[#022c22] text-[11px] sm:text-xs font-bold mt-2 tabular-nums"></p>
         </div>
 
         <div class="mb-3 sm:mb-5">
             <label class="block text-gray-700 text-[10px] sm:text-[11px] font-black uppercase tracking-widest mb-1.5 sm:mb-2">NIPY Anda</label>
             <input type="text" id="inputNipy" inputmode="numeric" placeholder="Masukkan NIPY" class="w-full px-3 sm:px-4 py-2.5 sm:py-3.5 bg-gray-50 border border-emerald-100 rounded-xl text-[#022c22] outline-none focus:border-[#d4af37] focus:ring-4 focus:ring-[#d4af37]/10 font-mono font-bold text-center text-base sm:text-lg tracking-widest transition-all">
+            <div id="kotakNama" class="hidden mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi"></div>
         </div>
 
         <div id="kotakKamera" class="relative w-full aspect-square rounded-xl sm:rounded-2xl overflow-hidden bg-[#022c22] mb-3 sm:mb-5 shadow-inner mx-auto">
@@ -97,6 +118,7 @@
         <div id="pesanHasil" class="hidden mt-3 sm:mt-4 text-xs sm:text-sm font-bold p-3 sm:p-4 rounded-xl text-center"></div>
 
         <p class="text-center text-[9px] sm:text-[10px] text-gray-400 font-medium mt-3 sm:mt-5">Wajah &amp; lokasi Anda direkam sebagai bukti kehadiran yang sah.</p>
+        <p class="text-center text-[9px] text-gray-300 font-bold mt-2">© 2026 SIPAM Al-Azhar Muncar</p>
     </div>
 
     <script>
@@ -112,8 +134,8 @@
         // Daftar semua lokasi kantor/cabang yang diizinkan untuk presensi.
         // Tambah/kurangi baris sesuai jumlah cabang yang ada, tidak dibatasi jumlahnya.
         const DAFTAR_LOKASI = [
-            { nama: 'Pondok Pesantren Modern Al-Azhar Muncar',  lat: -8.425995, lng: 114.328329 },
-            { nama: 'PPM. Al-Azhar Muncar 2',      lat: -8.426536, lng: 114.321656 }, // SESUAIKAN
+            { nama: 'Pondok Pesantren Modern Al-Azhar Muncar',  lat: -8.425952, lng: 114.328340 },
+            { nama: 'PPM. Al-Azhar Muncar 2',      lat: -8.426534, lng: 114.321659 }, // SESUAIKAN
             { nama: 'Cabang 3',      lat: -8.000000, lng: 114.000000 }, // SESUAIKAN
             { nama: 'Cabang 4',      lat: -8.000000, lng: 114.000000 }, // SESUAIKAN
         ];
@@ -126,6 +148,35 @@
         let jarakSaatIni = null;
         let namaLokasiTerdekat = null;
         let videoEl, canvasEl, ctx;
+        let timerCekNipy = null;
+        let namaPegawaiAktif = null;
+
+        // ---------- JAM REAL-TIME ----------
+        function updateJamRealtime() {
+            const sekarang = new Date();
+            const teks = sekarang.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                + ' · ' + sekarang.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const el = document.getElementById('jamRealtime');
+            if (el) el.innerText = teks;
+        }
+        updateJamRealtime();
+        setInterval(updateJamRealtime, 1000);
+
+        // ---------- SPLASH SCREEN ----------
+        function sembunyikanSplash() {
+            const splash = document.getElementById('splashScreen');
+            if (splash) splash.classList.add('tersembunyi');
+        }
+        setTimeout(sembunyikanSplash, 4000); // jaring pengaman kalau kamera lama merespons
+
+        // ---------- SAPAAN SESUAI JAM ----------
+        function sapaanSaatIni() {
+            const jam = new Date().getHours();
+            if (jam < 10) return 'Selamat Pagi';
+            if (jam < 15) return 'Selamat Siang';
+            if (jam < 18) return 'Selamat Sore';
+            return 'Selamat Malam';
+        }
 
         function pilihJenis(jenis) {
             jenisPresensi = jenis;
@@ -207,11 +258,13 @@
 
                 document.getElementById('overlayPesanKamera').classList.add('hidden');
                 canvasEl.width = videoEl.videoWidth; canvasEl.height = videoEl.videoHeight;
+                sembunyikanSplash();
 
                 mulaiPantauLokasi();
                 setInterval(deteksiWajahLoop, 350);
             } catch (e) {
                 document.getElementById('overlayPesanKamera').innerText = 'Gagal mengakses kamera: ' + e.message;
+                sembunyikanSplash();
             }
         }
 
@@ -258,7 +311,50 @@
                 label.innerText = !nipy ? 'Isi NIPY terlebih dahulu' : (!wajahTerdeteksi ? 'Menunggu wajah terdeteksi...' : 'Menunggu lokasi valid...');
             }
         }
-        document.getElementById('inputNipy').addEventListener('input', perbaruiTombolRekam);
+        document.getElementById('inputNipy').addEventListener('input', () => {
+            perbaruiTombolRekam();
+            const kotak = document.getElementById('kotakNama');
+            const nipy = document.getElementById('inputNipy').value.trim();
+            namaPegawaiAktif = null;
+
+            clearTimeout(timerCekNipy);
+            if (nipy.length < 4) {
+                kotak.classList.add('hidden');
+                return;
+            }
+            timerCekNipy = setTimeout(() => cekNamaPegawai(nipy), 600);
+        });
+
+        // Cek nama pegawai ke backend (tanpa mencatat presensi apapun),
+        // ditampilkan sebagai konfirmasi visual sebelum ambil foto.
+        function cekNamaPegawai(nipy) {
+            const kotak = document.getElementById('kotakNama');
+            kotak.classList.remove('hidden');
+            kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-gray-100 text-gray-500';
+            kotak.innerText = 'Mencari nama...';
+
+            fetch(URL_APPS_SCRIPT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ aksi: 'cekNipy', nipy: nipy })
+            })
+            .then(res => res.json())
+            .then(res => {
+                // Cegah hasil basi kalau NIPY sudah berubah lagi saat menunggu respons
+                if (document.getElementById('inputNipy').value.trim() !== nipy) return;
+                if (res.success) {
+                    namaPegawaiAktif = res.nama;
+                    kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-emerald-50 text-emerald-700';
+                    kotak.innerText = `👋 ${sapaanSaatIni()}, ${res.nama}!`;
+                } else {
+                    kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-red-50 text-red-500';
+                    kotak.innerText = '⚠️ ' + res.message;
+                }
+            })
+            .catch(() => {
+                kotak.classList.add('hidden');
+            });
+        }
 
         // ---------- REKAM: kirim ke Apps Script (URL diri sendiri) lewat fetch() ----------
         function rekamPresensi() {
@@ -276,6 +372,28 @@
             const ctxFoto = canvasFoto.getContext('2d');
             ctxFoto.translate(canvasFoto.width, 0); ctxFoto.scale(-1, 1);
             ctxFoto.drawImage(videoEl, 0, 0, canvasFoto.width, canvasFoto.height);
+            ctxFoto.scale(-1, 1); ctxFoto.translate(-canvasFoto.width, 0); // kembalikan orientasi supaya teks tidak terbalik
+
+            // ---------- WATERMARK: tanggal, jam, cabang di bagian bawah foto ----------
+            const sekarangFoto = new Date();
+            const teksTanggal = sekarangFoto.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+            const teksJam = sekarangFoto.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const teksCabang = namaLokasiTerdekat || '-';
+            const tinggiBar = Math.round(canvasFoto.height * 0.14);
+            const ukuranFontBesar = Math.max(14, Math.round(canvasFoto.width * 0.045));
+            const ukuranFontKecil = Math.max(11, Math.round(canvasFoto.width * 0.032));
+
+            ctxFoto.fillStyle = 'rgba(2, 44, 34, 0.72)';
+            ctxFoto.fillRect(0, canvasFoto.height - tinggiBar, canvasFoto.width, tinggiBar);
+
+            ctxFoto.fillStyle = '#ffffff';
+            ctxFoto.textBaseline = 'middle';
+            ctxFoto.font = `bold ${ukuranFontBesar}px sans-serif`;
+            ctxFoto.fillText(`${teksTanggal} · ${teksJam}`, 14, canvasFoto.height - tinggiBar * 0.62);
+            ctxFoto.fillStyle = '#d4af37';
+            ctxFoto.font = `bold ${ukuranFontKecil}px sans-serif`;
+            ctxFoto.fillText(`${teksCabang} · SIPAM Al-Azhar Muncar`, 14, canvasFoto.height - tinggiBar * 0.24);
+
             const fotoBase64 = canvasFoto.toDataURL('image/jpeg', 0.85);
 
             const payload = {
@@ -300,12 +418,24 @@
             .then(res => {
                 label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
                 pesan.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-emerald-50', 'text-emerald-700');
+
                 if (res.success) {
-                    pesan.classList.add('bg-emerald-50', 'text-emerald-700');
-                    pesan.innerText = '✅ ' + res.message;
+                    // Getar HP kalau didukung perangkat
+                    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+
+                    pesan.className = 'mt-3 sm:mt-4 rounded-xl text-center kartu-animasi bg-emerald-50 p-4 sm:p-5';
+                    pesan.innerHTML = `
+                        <svg class="lingkaran-sukses mx-auto mb-2" width="52" height="52" viewBox="0 0 52 52">
+                            <circle cx="26" cy="26" r="24" fill="none" stroke="#10b981" stroke-width="3"/>
+                            <path class="centang-sukses" d="M15 27l7 7 15-15" fill="none" stroke="#10b981" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <p class="text-emerald-700 font-black text-sm sm:text-base">${res.message}</p>
+                        <p class="text-emerald-600/80 text-[11px] sm:text-xs font-bold mt-2">📊 Bulan ini: ${res.hadirBulanIni ?? 0} Hadir · ${res.terlambatBulanIni ?? 0} Terlambat</p>
+                    `;
                     document.getElementById('inputNipy').value = '';
+                    document.getElementById('kotakNama').classList.add('hidden');
                 } else {
-                    pesan.classList.add('bg-red-50', 'text-red-600');
+                    pesan.className = 'mt-3 sm:mt-4 text-xs sm:text-sm font-bold p-3 sm:p-4 rounded-xl text-center kartu-animasi bg-red-50 text-red-600';
                     pesan.innerText = '⚠️ ' + res.message;
                 }
                 perbaruiTombolRekam();
