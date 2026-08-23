@@ -47,7 +47,7 @@
         <div class="text-center mb-3 sm:mb-6 mt-1 sm:mt-2">
             <img src="https://i.ibb.co.com/v40vx8y4/52583ff7-d459-4803-af74-dec0cbc4be0b.png" alt="Logo Al-Azhar Muncar" class="w-14 h-14 sm:w-20 sm:h-20 mx-auto mb-2 rounded-full object-cover border-2 border-[#d4af37] shadow-md">
             <h1 class="text-lg sm:text-2xl font-black text-[#022c22] tracking-tight">Presensi Digital</h1>
-            <p class="text-gray-500 text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-1">SIPAM · Al-Azhar Muncar</p>
+            <p class="text-gray-500 text-[10px] sm:text-xs font-bold uppercase tracking-widest mt-1">SIPAM-ALAMUN</p>
         </div>
 
         <div class="mb-3 sm:mb-5">
@@ -109,8 +109,14 @@
         // =========================================================
         const URL_APPS_SCRIPT = 'https://script.google.com/macros/s/AKfycbwkMlKelC7ORqJYAu1zGLfX2UbXH15h9qw3JnzdHkaZk6B5xAwap6MSEt3x-Lkn9Q/exec';
 
-        const KANTOR_LAT = -8.425941;      // SESUAIKAN: latitude titik kantor
-        const KANTOR_LNG = 114.328326;     // SESUAIKAN: longitude titik kantor
+        // Daftar semua lokasi kantor/cabang yang diizinkan untuk presensi.
+        // Tambah/kurangi baris sesuai jumlah cabang yang ada, tidak dibatasi jumlahnya.
+        const DAFTAR_LOKASI = [
+            { nama: 'Kantor Pusat',  lat: -8.425941, lng: 114.328326 },
+            { nama: 'Cabang 2',      lat: -8.426535, lng: 114.321655 }, // PPM AL AZHAR MUNCAR 2
+            { nama: 'Cabang 3',      lat: -8.000000, lng: 114.000000 }, // SESUAIKAN
+            { nama: 'Cabang 4',      lat: -8.000000, lng: 114.000000 }, // SESUAIKAN
+        ];
         const RADIUS_METER = 2000;         // SESUAIKAN: radius toleransi (meter), samakan dengan Code.gs
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
 
@@ -118,6 +124,7 @@
         let wajahTerdeteksi = false;
         let lokasiValid = false;
         let jarakSaatIni = null;
+        let namaLokasiTerdekat = null;
         let videoEl, canvasEl, ctx;
 
         function pilihJenis(jenis) {
@@ -143,15 +150,32 @@
             return R * c;
         }
 
+        // Mencari lokasi TERDEKAT dari seluruh DAFTAR_LOKASI, mengembalikan
+        // nama cabang & jaraknya (dalam meter).
+        function cariLokasiTerdekat(lat, lng) {
+            let terdekat = null;
+            let jarakTerdekat = Infinity;
+            DAFTAR_LOKASI.forEach(lokasi => {
+                const jarak = hitungJarakMeter(lat, lng, lokasi.lat, lokasi.lng);
+                if (jarak < jarakTerdekat) {
+                    jarakTerdekat = jarak;
+                    terdekat = lokasi.nama;
+                }
+            });
+            return { nama: terdekat, jarak: Math.round(jarakTerdekat) };
+        }
+
         function mulaiPantauLokasi() {
             if (!navigator.geolocation) { setStatusLokasi(false, 'Perangkat tidak mendukung GPS'); return; }
             navigator.geolocation.watchPosition(
                 (pos) => {
                     const { latitude, longitude } = pos.coords;
-                    jarakSaatIni = Math.round(hitungJarakMeter(latitude, longitude, KANTOR_LAT, KANTOR_LNG));
+                    const hasil = cariLokasiTerdekat(latitude, longitude);
+                    jarakSaatIni = hasil.jarak;
+                    namaLokasiTerdekat = hasil.nama;
                     window._koordinatTerakhir = { lat: latitude, lng: longitude };
-                    if (jarakSaatIni <= RADIUS_METER) setStatusLokasi(true, `Dalam area (${jarakSaatIni}m)`);
-                    else setStatusLokasi(false, `Di luar area (${jarakSaatIni}m)`);
+                    if (jarakSaatIni <= RADIUS_METER) setStatusLokasi(true, `${hasil.nama} (${jarakSaatIni}m)`);
+                    else setStatusLokasi(false, `Di luar area, terdekat ${hasil.nama} (${jarakSaatIni}m)`);
                     perbaruiTombolRekam();
                 },
                 (err) => { setStatusLokasi(false, 'Izin lokasi ditolak'); },
@@ -260,6 +284,7 @@
                 latitude: window._koordinatTerakhir ? window._koordinatTerakhir.lat : null,
                 longitude: window._koordinatTerakhir ? window._koordinatTerakhir.lng : null,
                 jarakMeter: jarakSaatIni,
+                namaLokasi: namaLokasiTerdekat,
                 foto: fotoBase64
             };
 
