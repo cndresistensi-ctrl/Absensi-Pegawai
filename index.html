@@ -74,6 +74,10 @@
             <label class="block text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1">NIPY Anda</label>
             <input type="text" id="inputNipy" inputmode="numeric" placeholder="Masukkan NIPY" class="w-full px-3 py-2 sm:py-2.5 bg-gray-50 border border-emerald-100 rounded-xl text-[#022c22] outline-none focus:border-[#d4af37] focus:ring-4 focus:ring-[#d4af37]/10 font-mono font-bold text-center text-sm sm:text-base tracking-widest transition-all">
             <div id="kotakNama" class="hidden mt-1.5 px-2 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold text-center kartu-animasi"></div>
+            <div id="kotakSesi" class="hidden mt-1.5 kartu-animasi">
+                <p class="text-gray-500 text-[9px] font-black uppercase tracking-widest mb-1 text-center">Pilih Sesi</p>
+                <div id="daftarTombolSesi" class="grid grid-cols-3 gap-1.5"></div>
+            </div>
         </div>
 
         <div id="kotakKamera" class="relative w-full aspect-square rounded-xl overflow-hidden bg-[#022c22] mb-2 sm:mb-3 shadow-inner mx-auto">
@@ -133,9 +137,9 @@
         // Daftar semua lokasi kantor/cabang yang diizinkan untuk presensi.
         // Tambah/kurangi baris sesuai jumlah cabang yang ada, tidak dibatasi jumlahnya.
         const DAFTAR_LOKASI = [
-            { nama: 'Pondok Pesantren Modern Al-Azhar Muncar',  lat: -8.425683, lng: 114.328129 },
-            { nama: 'PPM. Al-Azhar Muncar 2',      lat: -8.426541, lng: 114.321653 }, // SESUAIKAN
-            { nama: 'Kantor Laundry Al Azhar Muncar',      lat: -8.425967, lng: 114.326913 }, // SESUAIKAN
+            { nama: 'Pondok Pesantren Modern Al-Azhar Muncar',  lat: -8.425984, lng: 114.328326 },
+            { nama: 'PPM. Al-Azhar Muncar 2',      lat: -8.426536, lng: 114.321652 }, // SESUAIKAN
+            { nama: 'Kantor Laundry Al Azhar Muncar',      lat: -8.425966, lng: 114.326912 }, // SESUAIKAN
             { nama: 'Cabang 4',      lat: -8.000000, lng: 114.000000 }, // SESUAIKAN
         ];
         const RADIUS_METER = 200;          // SESUAIKAN: radius toleransi (meter), samakan dengan Code.gs
@@ -149,6 +153,8 @@
         let videoEl, canvasEl, ctx;
         let timerCekNipy = null;
         let namaPegawaiAktif = null;
+        let jumlahSesiAktif = 1;
+        let sesiTerpilih = 1;
 
         // ---------- JAM REAL-TIME ----------
         function updateJamRealtime() {
@@ -299,15 +305,18 @@
             const btn = document.getElementById('btnRekam');
             const label = document.getElementById('labelBtnRekam');
             const nipy = document.getElementById('inputNipy').value.trim();
+            const sesiSudahDipilih = jumlahSesiAktif <= 1 || sesiTerpilih !== null;
 
-            if (wajahTerdeteksi && lokasiValid && nipy !== '') {
+            if (wajahTerdeteksi && lokasiValid && nipy !== '' && sesiSudahDipilih) {
                 btn.disabled = false;
                 btn.className = "w-full bg-gradient-to-r from-[#d4af37] to-[#b38728] hover:from-[#b38728] hover:to-[#d4af37] text-white font-black text-lg py-4 rounded-xl shadow-[0_10px_20px_-10px_rgba(212,175,55,0.6)] flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.02]";
-                label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
+                label.innerText = '📸 Rekam Presensi ' + jenisPresensi + (jumlahSesiAktif > 1 ? ' (Sesi ' + sesiTerpilih + ')' : '');
             } else {
                 btn.disabled = true;
                 btn.className = "w-full bg-gray-300 text-gray-500 font-black text-lg py-4 rounded-xl shadow-inner cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-300";
-                label.innerText = !nipy ? 'Isi NIPY terlebih dahulu' : (!wajahTerdeteksi ? 'Menunggu wajah terdeteksi...' : 'Menunggu lokasi valid...');
+                label.innerText = !nipy ? 'Isi NIPY terlebih dahulu'
+                    : (!sesiSudahDipilih ? 'Pilih sesi terlebih dahulu'
+                    : (!wajahTerdeteksi ? 'Menunggu wajah terdeteksi...' : 'Menunggu lokasi valid...'));
             }
         }
         document.getElementById('inputNipy').addEventListener('input', () => {
@@ -315,6 +324,9 @@
             const kotak = document.getElementById('kotakNama');
             const nipy = document.getElementById('inputNipy').value.trim();
             namaPegawaiAktif = null;
+            jumlahSesiAktif = 1;
+            sesiTerpilih = 1;
+            document.getElementById('kotakSesi').classList.add('hidden');
 
             clearTimeout(timerCekNipy);
             if (nipy.length < 4) {
@@ -343,16 +355,51 @@
                 if (document.getElementById('inputNipy').value.trim() !== nipy) return;
                 if (res.success) {
                     namaPegawaiAktif = res.nama;
+                    jumlahSesiAktif = res.jumlahSesi || 1;
                     kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-emerald-50 text-emerald-700';
                     kotak.innerText = `👋 ${sapaanSaatIni()}, ${res.nama}!`;
+                    tampilkanPemilihSesi(jumlahSesiAktif);
                 } else {
                     kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-red-50 text-red-500';
                     kotak.innerText = '⚠️ ' + res.message;
                 }
+                perbaruiTombolRekam();
             })
             .catch(() => {
                 kotak.classList.add('hidden');
             });
+        }
+
+        // Tampilkan tombol pilih sesi HANYA untuk pegawai dengan lebih dari 1 sesi/hari
+        // (misal guru dengan beberapa jam mengajar). Pegawai biasa tidak melihat ini sama sekali.
+        function tampilkanPemilihSesi(jumlahSesi) {
+            const kotakSesi = document.getElementById('kotakSesi');
+            const daftar = document.getElementById('daftarTombolSesi');
+            if (jumlahSesi <= 1) {
+                kotakSesi.classList.add('hidden');
+                sesiTerpilih = 1;
+                return;
+            }
+            daftar.innerHTML = '';
+            sesiTerpilih = null; // wajib pilih dulu sebelum bisa presensi
+            for (let s = 1; s <= jumlahSesi; s++) {
+                const tombol = document.createElement('button');
+                tombol.type = 'button';
+                tombol.innerText = 'Sesi ' + s;
+                tombol.className = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 transition-all';
+                tombol.onclick = () => pilihSesi(s, tombol);
+                daftar.appendChild(tombol);
+            }
+            kotakSesi.classList.remove('hidden');
+        }
+
+        function pilihSesi(s, tombolDiklik) {
+            sesiTerpilih = s;
+            document.querySelectorAll('#daftarTombolSesi button').forEach(b => {
+                b.className = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 transition-all';
+            });
+            tombolDiklik.className = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-[#022c22] bg-[#022c22] text-white transition-all';
+            perbaruiTombolRekam();
         }
 
         // ---------- REKAM: kirim ke Apps Script (URL diri sendiri) lewat fetch() ----------
@@ -398,6 +445,7 @@
             const payload = {
                 nipy: nipy,
                 jenis: jenisPresensi,
+                sesi: sesiTerpilih || 1,
                 latitude: window._koordinatTerakhir ? window._koordinatTerakhir.lat : null,
                 longitude: window._koordinatTerakhir ? window._koordinatTerakhir.lng : null,
                 jarakMeter: jarakSaatIni,
@@ -433,6 +481,9 @@
                     `;
                     document.getElementById('inputNipy').value = '';
                     document.getElementById('kotakNama').classList.add('hidden');
+                    document.getElementById('kotakSesi').classList.add('hidden');
+                    jumlahSesiAktif = 1;
+                    sesiTerpilih = 1;
                 } else {
                     pesan.className = 'mt-3 sm:mt-4 text-xs sm:text-sm font-bold p-3 sm:p-4 rounded-xl text-center kartu-animasi bg-red-50 text-red-600';
                     pesan.innerText = '⚠️ ' + res.message;
