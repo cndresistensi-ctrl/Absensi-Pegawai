@@ -251,6 +251,21 @@
                 bPulang.className = "py-3 rounded-xl font-black text-sm border-2 border-[#022c22] bg-[#022c22] text-white transition-all";
                 bMasuk.className = "py-3 rounded-xl font-black text-sm border-2 border-gray-200 text-gray-500 transition-all";
             }
+
+            // Pemilih sesi HANYA berlaku untuk "Masuk". Untuk "Pulang", sesi tidak
+            // relevan (cukup dicatat sekali per hari), jadi kotaknya disembunyikan
+            // dan sesiTerpilih dipaksa jadi 1 supaya tombol Rekam tetap bisa aktif
+            // tanpa perlu memilih sesi terlebih dahulu.
+            const kotakSesi = document.getElementById('kotakSesi');
+            if (jenis === 'Pulang') {
+                kotakSesi.classList.add('hidden');
+                sesiTerpilih = 1;
+            } else if (jumlahSesiAktif > 1) {
+                // Kembali ke Masuk & pegawai ini punya banyak sesi -> wajib pilih ulang
+                sesiTerpilih = null;
+                tampilkanPemilihSesi(jumlahSesiAktif);
+            }
+            perbaruiTombolRekam();
         }
 
         function hitungJarakMeter(lat1, lng1, lat2, lng2) {
@@ -362,12 +377,14 @@
             const btn = document.getElementById('btnRekam');
             const label = document.getElementById('labelBtnRekam');
             const nipy = document.getElementById('inputNipy').value.trim();
-            const sesiSudahDipilih = jumlahSesiAktif <= 1 || sesiTerpilih !== null;
+            // Sesi hanya wajib dipilih untuk "Masuk". Untuk "Pulang" tidak perlu sesi sama sekali.
+            const sesiSudahDipilih = jenisPresensi === 'Pulang' || jumlahSesiAktif <= 1 || sesiTerpilih !== null;
+            const tampilkanLabelSesi = jenisPresensi === 'Masuk' && jumlahSesiAktif > 1;
 
             if (wajahTerdeteksi && lokasiValid && nipy !== '' && sesiSudahDipilih) {
                 btn.disabled = false;
                 btn.className = "w-full bg-gradient-to-r from-[#d4af37] to-[#b38728] hover:from-[#b38728] hover:to-[#d4af37] text-white font-black text-lg py-4 rounded-xl shadow-[0_10px_20px_-10px_rgba(212,175,55,0.6)] flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.02]";
-                label.innerText = '📸 Rekam Presensi ' + jenisPresensi + (jumlahSesiAktif > 1 ? ' (Sesi ' + sesiTerpilih + ')' : '');
+                label.innerText = '📸 Rekam Presensi ' + jenisPresensi + (tampilkanLabelSesi ? ' (Sesi ' + sesiTerpilih + ')' : '');
             } else {
                 btn.disabled = true;
                 btn.className = "w-full bg-gray-300 text-gray-500 font-black text-lg py-4 rounded-xl shadow-inner cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-300";
@@ -428,11 +445,12 @@
         }
 
         // Tampilkan tombol pilih sesi HANYA untuk pegawai dengan lebih dari 1 sesi/hari
-        // (misal guru dengan beberapa jam mengajar). Pegawai biasa tidak melihat ini sama sekali.
+        // (misal guru dengan beberapa jam mengajar) DAN hanya saat jenisnya "Masuk".
+        // Untuk "Pulang", sesi tidak relevan (cukup 1x per hari), jadi selalu disembunyikan.
         function tampilkanPemilihSesi(jumlahSesi) {
             const kotakSesi = document.getElementById('kotakSesi');
             const daftar = document.getElementById('daftarTombolSesi');
-            if (jumlahSesi <= 1) {
+            if (jumlahSesi <= 1 || jenisPresensi === 'Pulang') {
                 kotakSesi.classList.add('hidden');
                 sesiTerpilih = 1;
                 return;
@@ -505,7 +523,7 @@
             const payload = {
                 nipy: nipy,
                 jenis: jenisPresensi,
-                sesi: sesiTerpilih || 1,
+                sesi: jenisPresensi === 'Pulang' ? 1 : (sesiTerpilih || 1), // Pulang selalu sesi 1, tidak tergantung pilihan sesi
                 latitude: window._koordinatTerakhir ? window._koordinatTerakhir.lat : null,
                 longitude: window._koordinatTerakhir ? window._koordinatTerakhir.lng : null,
                 jarakMeter: jarakSaatIni,
