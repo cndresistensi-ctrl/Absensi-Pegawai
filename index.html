@@ -513,6 +513,29 @@
                 foto: fotoBase64
             };
 
+            kirimPresensiDenganRetry(payload, 1, btn, label, pesan, inputNipyEl);
+        }
+
+        // ---------- KIRIM KE SERVER DENGAN RETRY OTOMATIS ----------
+        // Kalau server membalas "sedang sibuk" (lock penuh) atau koneksi gagal
+        // sesaat, coba kirim ulang otomatis beberapa kali sebelum menyerah,
+        // supaya pengguna tidak perlu menekan tombol ulang secara manual.
+        const MAKS_PERCOBAAN = 3;
+        const JEDA_ANTAR_PERCOBAAN_MS = 2000; // jeda dasar, bertambah tiap percobaan
+
+        function kataKunciSibuk(pesanTeks) {
+            if (!pesanTeks) return false;
+            const teks = pesanTeks.toString().toLowerCase();
+            return teks.indexOf('sedang sibuk') !== -1 || teks.indexOf('penguncian') !== -1 || teks.indexOf('lock') !== -1;
+        }
+
+        function kirimPresensiDenganRetry(payload, percobaanKe, btn, label, pesan, inputNipyEl) {
+            if (percobaanKe === 1) {
+                tampilkanLoadingProses('Sedang memproses data presensi');
+            } else {
+                tampilkanLoadingProses('Mencoba lagi (percobaan ' + percobaanKe + '/' + MAKS_PERCOBAAN + ')');
+            }
+
             // Catatan teknis: Content-Type 'text/plain' sengaja dipakai (bukan application/json)
             // supaya browser TIDAK mengirim preflight OPTIONS request, karena Apps Script
             // tidak selalu merespons preflight dengan benar. Data tetap JSON di dalamnya.
@@ -523,6 +546,14 @@
             })
             .then(res => res.json())
             .then(res => {
+                // Server sedang sibuk (lock penuh) & masih ada jatah percobaan -> coba lagi otomatis
+                if (!res.success && kataKunciSibuk(res.message) && percobaanKe < MAKS_PERCOBAAN) {
+                    setTimeout(() => {
+                        kirimPresensiDenganRetry(payload, percobaanKe + 1, btn, label, pesan, inputNipyEl);
+                    }, JEDA_ANTAR_PERCOBAAN_MS * percobaanKe);
+                    return;
+                }
+
                 sembunyikanLoadingProses();
                 inputNipyEl.disabled = false;
                 label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
@@ -548,17 +579,25 @@
                     sesiTerpilih = 1;
                 } else {
                     pesan.className = 'mt-3 sm:mt-4 text-xs sm:text-sm font-bold p-3 sm:p-4 rounded-xl text-center kartu-animasi bg-red-50 text-red-600';
-                    pesan.innerText = '⚠️ ' + res.message;
+                    pesan.innerText = '⚠️ ' + res.message + (percobaanKe > 1 ? ' (sudah dicoba ' + percobaanKe + 'x)' : '');
                 }
                 perbaruiTombolRekam();
             })
             .catch(err => {
+                // Gagal koneksi (bukan balasan server) & masih ada jatah percobaan -> coba lagi otomatis
+                if (percobaanKe < MAKS_PERCOBAAN) {
+                    setTimeout(() => {
+                        kirimPresensiDenganRetry(payload, percobaanKe + 1, btn, label, pesan, inputNipyEl);
+                    }, JEDA_ANTAR_PERCOBAAN_MS * percobaanKe);
+                    return;
+                }
+
                 sembunyikanLoadingProses();
                 inputNipyEl.disabled = false;
                 label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
                 pesan.classList.remove('hidden');
                 pesan.className = 'mt-4 text-sm font-bold p-4 rounded-xl text-center bg-red-50 text-red-600';
-                pesan.innerText = '⚠️ Gagal terhubung ke server: ' + err.message;
+                pesan.innerText = '⚠️ Gagal terhubung ke server setelah ' + percobaanKe + 'x percobaan: ' + err.message;
                 perbaruiTombolRekam();
             });
         }
