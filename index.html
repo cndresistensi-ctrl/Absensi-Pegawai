@@ -47,6 +47,42 @@
 
         @keyframes kartuMasuk { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         .kartu-animasi { animation: kartuMasuk .3s ease; }
+
+        /* ---------- OVERLAY LOADING PROSES PRESENSI ---------- */
+        #overlayProses {
+            position: fixed; inset: 0; z-index: 60;
+            background: rgba(2, 44, 34, 0.82);
+            backdrop-filter: blur(3px);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; pointer-events: none;
+            transition: opacity .25s ease, visibility .25s ease;
+        }
+        #overlayProses.tampil { opacity: 1; visibility: visible; pointer-events: auto; }
+        .kotak-proses {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(212,175,55,0.35);
+            border-radius: 20px;
+            padding: 28px 32px;
+            display: flex; flex-direction: column; align-items: center; gap: 14px;
+            max-width: 260px;
+            text-align: center;
+        }
+        .spinner-emas {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            border: 4px solid rgba(212,175,55,0.25);
+            border-top-color: #d4af37;
+            animation: putarSpinner 0.85s linear infinite;
+        }
+        @keyframes putarSpinner { to { transform: rotate(360deg); } }
+        .titik-proses span {
+            display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+            background: #d4af37; margin: 0 2px;
+            animation: titikNaikTurun 1.2s ease-in-out infinite;
+        }
+        .titik-proses span:nth-child(2) { animation-delay: .15s; }
+        .titik-proses span:nth-child(3) { animation-delay: .3s; }
+        @keyframes titikNaikTurun { 0%,80%,100% { transform: translateY(0); opacity: .5; } 40% { transform: translateY(-4px); opacity: 1; } }
     </style>
 </head>
 <body class="bg-gradient-to-br from-[#022c22] to-[#064e3b] flex items-center justify-center p-2 sm:p-4 relative overflow-hidden">
@@ -55,6 +91,15 @@
         <img src="https://i.ibb.co.com/v40vx8y4/52583ff7-d459-4803-af74-dec0cbc4be0b.png" alt="Logo" class="splash-logo w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-2 border-[#d4af37] shadow-lg mb-4">
         <p class="text-white font-black text-lg tracking-tight">Presensi Digital</p>
         <p class="text-emerald-200/70 text-[10px] font-bold uppercase tracking-widest mt-1">SIPAM · ALAMUN</p>
+    </div>
+
+    <!-- ---------- OVERLAY LOADING SAAT PROSES PRESENSI ---------- -->
+    <div id="overlayProses">
+        <div class="kotak-proses">
+            <div class="spinner-emas"></div>
+            <p class="text-white font-black text-sm sm:text-base leading-tight" id="teksOverlayProses">Sedang memproses data</p>
+            <p class="text-emerald-200/70 text-[10px] sm:text-[11px] font-bold">Mohon tunggu sebentar<span class="titik-proses"><span></span><span></span><span></span></span></p>
+        </div>
     </div>
 
     <div class="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] bg-[#fcf6ba] opacity-[0.08] rounded-full blur-[120px] pointer-events-none"></div>
@@ -173,6 +218,18 @@
             if (splash) splash.classList.add('tersembunyi');
         }
         setTimeout(sembunyikanSplash, 4000); // jaring pengaman kalau kamera lama merespons
+
+        // ---------- OVERLAY LOADING PROSES PRESENSI ----------
+        function tampilkanLoadingProses(teks) {
+            const overlay = document.getElementById('overlayProses');
+            const label = document.getElementById('teksOverlayProses');
+            if (label) label.innerText = teks || 'Sedang memproses data';
+            if (overlay) overlay.classList.add('tampil');
+        }
+        function sembunyikanLoadingProses() {
+            const overlay = document.getElementById('overlayProses');
+            if (overlay) overlay.classList.remove('tampil');
+        }
 
         // ---------- SAPAAN SESUAI JAM ----------
         function sapaanSaatIni() {
@@ -407,11 +464,14 @@
             const btn = document.getElementById('btnRekam');
             const label = document.getElementById('labelBtnRekam');
             const pesan = document.getElementById('pesanHasil');
-            const nipy = document.getElementById('inputNipy').value.trim();
+            const inputNipyEl = document.getElementById('inputNipy');
+            const nipy = inputNipyEl.value.trim();
 
             btn.disabled = true;
+            inputNipyEl.disabled = true;
             label.innerText = 'Menyimpan presensi... ⏳';
             pesan.classList.add('hidden');
+            tampilkanLoadingProses('Sedang memproses data presensi');
 
             const canvasFoto = document.createElement('canvas');
             canvasFoto.width = videoEl.videoWidth; canvasFoto.height = videoEl.videoHeight;
@@ -463,6 +523,8 @@
             })
             .then(res => res.json())
             .then(res => {
+                sembunyikanLoadingProses();
+                inputNipyEl.disabled = false;
                 label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
                 pesan.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-emerald-50', 'text-emerald-700');
 
@@ -491,6 +553,8 @@
                 perbaruiTombolRekam();
             })
             .catch(err => {
+                sembunyikanLoadingProses();
+                inputNipyEl.disabled = false;
                 label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
                 pesan.classList.remove('hidden');
                 pesan.className = 'mt-4 text-sm font-bold p-4 rounded-xl text-center bg-red-50 text-red-600';
