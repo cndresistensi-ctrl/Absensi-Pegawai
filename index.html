@@ -34,6 +34,8 @@
 
         .status-chip { transition: all .35s ease; }
         video, canvas { transform: scaleX(-1); }
+        /* Canvas pratinjau surat tidak boleh dicerminkan */
+        #previewSurat { transform: none; }
 
         #splashScreen { transition: opacity .5s ease, visibility .5s ease; }
         #splashScreen.tersembunyi { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -155,9 +157,22 @@
             </div>
         </div>
 
+        <!-- ---------- PILIH JENIS: Masuk / Pulang / Sakit / Izin ---------- -->
         <div class="grid grid-cols-2 gap-1.5 sm:gap-2 mb-2 sm:mb-3">
             <button type="button" id="btnMasuk" onclick="pilihJenis('Masuk')" class="py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-[#022c22] bg-[#022c22] text-white transition-all">Presensi Masuk</button>
             <button type="button" id="btnPulang" onclick="pilihJenis('Pulang')" class="py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all">Presensi Pulang</button>
+            <button type="button" id="btnSakit" onclick="pilihJenis('Sakit')" class="py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all">🤒 Sakit</button>
+            <button type="button" id="btnIzin" onclick="pilihJenis('Izin')" class="py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all">📝 Izin</button>
+        </div>
+
+        <div id="kotakKeterangan" class="hidden mb-2 sm:mb-3 kartu-animasi">
+            <label class="block text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1">Alasan / Keterangan</label>
+            <textarea id="inputAlasan" rows="2" maxlength="500" placeholder="Tulis alasan singkat..." class="w-full px-3 py-2 bg-gray-50 border border-emerald-100 rounded-xl text-[#022c22] outline-none focus:border-[#d4af37] text-xs sm:text-sm font-semibold"></textarea>
+            <div id="kotakSurat" class="hidden mt-1.5">
+                <label class="block text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1">Foto Surat Dokter (wajib)</label>
+                <input type="file" id="inputSurat" accept="image/*" class="w-full text-[10px] sm:text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[#022c22] file:text-white file:font-bold">
+                <img id="previewSurat" alt="Preview surat" class="hidden mt-1.5 max-h-24 mx-auto rounded-lg border border-gray-200">
+            </div>
         </div>
 
         <button id="btnRekam" onclick="rekamPresensi()" disabled class="w-full bg-gray-300 text-gray-500 font-black text-sm sm:text-base py-2.5 sm:py-3 rounded-xl shadow-inner cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-300">
@@ -190,6 +205,17 @@
         const RADIUS_METER = 200;          // SESUAIKAN: radius toleransi (meter), samakan dengan Code.gs
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
 
+        // Gaya tombol jenis presensi (aktif / tidak aktif)
+        const STYLE_AKTIF = 'py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-[#022c22] bg-[#022c22] text-white transition-all';
+        const STYLE_NONAKTIF = 'py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all';
+        const STYLE_SESI_AKTIF = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-[#022c22] bg-[#022c22] text-white transition-all';
+        const STYLE_SESI_NONAKTIF = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 transition-all';
+        const STYLE_REKAM_AKTIF = 'w-full bg-gradient-to-r from-[#d4af37] to-[#b38728] hover:from-[#b38728] hover:to-[#d4af37] text-white font-black text-sm sm:text-base py-2.5 sm:py-3 rounded-xl shadow-[0_10px_20px_-10px_rgba(212,175,55,0.6)] flex items-center justify-center gap-2 transition-all duration-300';
+        const STYLE_REKAM_MATI = 'w-full bg-gray-300 text-gray-500 font-black text-sm sm:text-base py-2.5 sm:py-3 rounded-xl shadow-inner cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-300';
+        const CHIP_HIJAU = 'status-chip flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 sm:py-2';
+        const CHIP_MERAH = 'status-chip flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 sm:py-2';
+        const CHIP_ABU = 'status-chip flex items-center gap-1.5 bg-gray-100 border border-gray-200 rounded-lg px-2 py-1.5 sm:py-2';
+
         let jenisPresensi = 'Masuk';
         let wajahTerdeteksi = false;
         let lokasiValid = false;
@@ -200,6 +226,10 @@
         let namaPegawaiAktif = null;
         let jumlahSesiAktif = 1;
         let sesiTerpilih = 1;
+        let fotoSuratBase64 = null;
+
+        // Sakit / Izin = tidak hadir: tidak butuh wajah & lokasi
+        function adaNonHadir() { return jenisPresensi === 'Sakit' || jenisPresensi === 'Izin'; }
 
         // ---------- JAM REAL-TIME ----------
         function updateJamRealtime() {
@@ -240,34 +270,67 @@
             return 'Selamat Malam';
         }
 
+        // ---------- PILIH JENIS: Masuk / Pulang / Sakit / Izin ----------
         function pilihJenis(jenis) {
             jenisPresensi = jenis;
-            const bMasuk = document.getElementById('btnMasuk');
-            const bPulang = document.getElementById('btnPulang');
-            if (jenis === 'Masuk') {
-                bMasuk.className = "py-3 rounded-xl font-black text-sm border-2 border-[#022c22] bg-[#022c22] text-white transition-all";
-                bPulang.className = "py-3 rounded-xl font-black text-sm border-2 border-gray-200 text-gray-500 transition-all";
-            } else {
-                bPulang.className = "py-3 rounded-xl font-black text-sm border-2 border-[#022c22] bg-[#022c22] text-white transition-all";
-                bMasuk.className = "py-3 rounded-xl font-black text-sm border-2 border-gray-200 text-gray-500 transition-all";
-            }
+            ['Masuk', 'Pulang', 'Sakit', 'Izin'].forEach(j => {
+                document.getElementById('btn' + j).className = (j === jenis) ? STYLE_AKTIF : STYLE_NONAKTIF;
+            });
 
-            // Pemilih sesi HANYA berlaku untuk "Masuk". Untuk "Pulang", sesi tidak
-            // relevan (cukup dicatat sekali per hari), jadi kotaknya disembunyikan
-            // dan sesiTerpilih dipaksa jadi 1 supaya tombol Rekam tetap bisa aktif
-            // tanpa perlu memilih sesi terlebih dahulu.
+            // Kotak alasan tampil untuk Sakit & Izin; kotak surat hanya untuk Sakit
+            document.getElementById('kotakKeterangan').classList.toggle('hidden', !adaNonHadir());
+            document.getElementById('kotakSurat').classList.toggle('hidden', jenis !== 'Sakit');
+
+            // Pemilih sesi HANYA berlaku untuk "Masuk". Untuk jenis lain sesi tidak
+            // relevan, jadi kotaknya disembunyikan dan sesiTerpilih dipaksa 1.
             const kotakSesi = document.getElementById('kotakSesi');
-            if (jenis === 'Pulang') {
-                kotakSesi.classList.add('hidden');
-                sesiTerpilih = 1;
-            } else if (jumlahSesiAktif > 1) {
-                // Kembali ke Masuk & pegawai ini punya banyak sesi -> wajib pilih ulang
+            if (jenis === 'Masuk' && jumlahSesiAktif > 1) {
                 sesiTerpilih = null;
                 tampilkanPemilihSesi(jumlahSesiAktif);
+            } else {
+                kotakSesi.classList.add('hidden');
+                sesiTerpilih = 1;
             }
             perbaruiTombolRekam();
         }
 
+        // Kompres foto surat supaya ringan dikirim ke Apps Script
+        function kompresGambar(file, maks) {
+            maks = maks || 1000;
+            return new Promise((ok, gagal) => {
+                const r = new FileReader();
+                r.onload = () => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const s = Math.min(1, maks / Math.max(img.width, img.height));
+                        const c = document.createElement('canvas');
+                        c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+                        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                        ok(c.toDataURL('image/jpeg', 0.75));
+                    };
+                    img.onerror = gagal; img.src = r.result;
+                };
+                r.onerror = gagal; r.readAsDataURL(file);
+            });
+        }
+
+        document.getElementById('inputSurat').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            const prev = document.getElementById('previewSurat');
+            if (!file) { fotoSuratBase64 = null; prev.classList.add('hidden'); perbaruiTombolRekam(); return; }
+            try {
+                fotoSuratBase64 = await kompresGambar(file);
+                prev.src = fotoSuratBase64; prev.classList.remove('hidden');
+            } catch (err) {
+                fotoSuratBase64 = null;
+                prev.classList.add('hidden');
+                alert('Gambar tidak bisa dibaca, coba foto lain.');
+            }
+            perbaruiTombolRekam();
+        });
+        document.getElementById('inputAlasan').addEventListener('input', perbaruiTombolRekam);
+
+        // ---------- LOKASI ----------
         function hitungJarakMeter(lat1, lng1, lat2, lng2) {
             const R = 6371000;
             const toRad = d => d * Math.PI / 180;
@@ -316,10 +379,11 @@
             document.getElementById('teksLokasi').innerText = teks;
             const dot = document.getElementById('dotLokasi');
             const chip = document.getElementById('chipLokasi');
-            if (valid) { dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500'; chip.className = 'status-chip flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-3'; }
-            else { dot.className = 'w-2.5 h-2.5 rounded-full bg-red-400 pulse-dot'; chip.className = 'status-chip flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-3'; }
+            if (valid) { dot.className = 'w-2 h-2 rounded-full bg-emerald-500 shrink-0'; chip.className = CHIP_HIJAU; }
+            else { dot.className = 'w-2 h-2 rounded-full bg-red-400 pulse-dot shrink-0'; chip.className = CHIP_MERAH; }
         }
 
+        // ---------- KAMERA & DETEKSI WAJAH ----------
         async function mulaiKamera() {
             videoEl = document.getElementById('videoLive');
             canvasEl = document.getElementById('canvasOverlay');
@@ -342,6 +406,8 @@
             } catch (e) {
                 document.getElementById('overlayPesanKamera').innerText = 'Gagal mengakses kamera: ' + e.message;
                 sembunyikanSplash();
+                // Kamera gagal: Presensi Masuk/Pulang tidak bisa, tapi Sakit/Izin tetap bisa dikirim.
+                mulaiPantauLokasi();
             }
         }
 
@@ -369,30 +435,44 @@
             document.getElementById('teksWajah').innerText = teks;
             const dot = document.getElementById('dotWajah');
             const chip = document.getElementById('chipWajah');
-            if (valid) { dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500'; chip.className = 'status-chip flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-3'; }
-            else { dot.className = 'w-2.5 h-2.5 rounded-full bg-gray-400 pulse-dot'; chip.className = 'status-chip flex items-center gap-2 bg-gray-100 border border-gray-200 rounded-xl px-3 py-3'; }
+            if (valid) { dot.className = 'w-2 h-2 rounded-full bg-emerald-500 shrink-0'; chip.className = CHIP_HIJAU; }
+            else { dot.className = 'w-2 h-2 rounded-full bg-gray-400 pulse-dot shrink-0'; chip.className = CHIP_ABU; }
         }
 
+        // ---------- STATUS TOMBOL REKAM ----------
         function perbaruiTombolRekam() {
             const btn = document.getElementById('btnRekam');
             const label = document.getElementById('labelBtnRekam');
             const nipy = document.getElementById('inputNipy').value.trim();
-            // Sesi hanya wajib dipilih untuk "Masuk". Untuk "Pulang" tidak perlu sesi sama sekali.
-            const sesiSudahDipilih = jenisPresensi === 'Pulang' || jumlahSesiAktif <= 1 || sesiTerpilih !== null;
+            const nonHadir = adaNonHadir();
+            const alasan = (document.getElementById('inputAlasan').value || '').trim();
+            // Sesi hanya wajib dipilih untuk "Masuk".
+            const sesiSudahDipilih = jenisPresensi !== 'Masuk' || jumlahSesiAktif <= 1 || sesiTerpilih !== null;
             const tampilkanLabelSesi = jenisPresensi === 'Masuk' && jumlahSesiAktif > 1;
 
-            if (wajahTerdeteksi && lokasiValid && nipy !== '' && sesiSudahDipilih) {
+            const alasanOk = alasan.length >= 5;
+            const suratOk = jenisPresensi !== 'Sakit' || !!fotoSuratBase64;
+            const siap = nonHadir
+                ? (nipy !== '' && alasanOk && suratOk)
+                : (wajahTerdeteksi && lokasiValid && nipy !== '' && sesiSudahDipilih);
+
+            if (siap) {
                 btn.disabled = false;
-                btn.className = "w-full bg-gradient-to-r from-[#d4af37] to-[#b38728] hover:from-[#b38728] hover:to-[#d4af37] text-white font-black text-lg py-4 rounded-xl shadow-[0_10px_20px_-10px_rgba(212,175,55,0.6)] flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.02]";
-                label.innerText = '📸 Rekam Presensi ' + jenisPresensi + (tampilkanLabelSesi ? ' (Sesi ' + sesiTerpilih + ')' : '');
+                btn.className = STYLE_REKAM_AKTIF;
+                label.innerText = nonHadir
+                    ? '📝 Kirim Keterangan ' + jenisPresensi
+                    : '📸 Rekam Presensi ' + jenisPresensi + (tampilkanLabelSesi ? ' (Sesi ' + sesiTerpilih + ')' : '');
             } else {
                 btn.disabled = true;
-                btn.className = "w-full bg-gray-300 text-gray-500 font-black text-lg py-4 rounded-xl shadow-inner cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-300";
-                label.innerText = !nipy ? 'Isi NIPY terlebih dahulu'
-                    : (!sesiSudahDipilih ? 'Pilih sesi terlebih dahulu'
-                    : (!wajahTerdeteksi ? 'Menunggu wajah terdeteksi...' : 'Menunggu lokasi valid...'));
+                btn.className = STYLE_REKAM_MATI;
+                if (!nipy) label.innerText = 'Isi NIPY terlebih dahulu';
+                else if (nonHadir) label.innerText = !alasanOk ? 'Isi alasan terlebih dahulu' : 'Unggah foto surat dokter';
+                else if (!sesiSudahDipilih) label.innerText = 'Pilih sesi terlebih dahulu';
+                else if (!wajahTerdeteksi) label.innerText = 'Menunggu wajah terdeteksi...';
+                else label.innerText = 'Menunggu lokasi valid...';
             }
         }
+
         document.getElementById('inputNipy').addEventListener('input', () => {
             perbaruiTombolRekam();
             const kotak = document.getElementById('kotakNama');
@@ -432,7 +512,8 @@
                     jumlahSesiAktif = res.jumlahSesi || 1;
                     kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-emerald-50 text-emerald-700';
                     kotak.innerText = `👋 ${sapaanSaatIni()}, ${res.nama}!`;
-                    tampilkanPemilihSesi(jumlahSesiAktif);
+                    // Pemilih sesi hanya untuk Masuk
+                    if (jenisPresensi === 'Masuk') tampilkanPemilihSesi(jumlahSesiAktif);
                 } else {
                     kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-red-50 text-red-500';
                     kotak.innerText = '⚠️ ' + res.message;
@@ -445,12 +526,11 @@
         }
 
         // Tampilkan tombol pilih sesi HANYA untuk pegawai dengan lebih dari 1 sesi/hari
-        // (misal guru dengan beberapa jam mengajar) DAN hanya saat jenisnya "Masuk".
-        // Untuk "Pulang", sesi tidak relevan (cukup 1x per hari), jadi selalu disembunyikan.
+        // DAN hanya saat jenisnya "Masuk".
         function tampilkanPemilihSesi(jumlahSesi) {
             const kotakSesi = document.getElementById('kotakSesi');
             const daftar = document.getElementById('daftarTombolSesi');
-            if (jumlahSesi <= 1 || jenisPresensi === 'Pulang') {
+            if (jumlahSesi <= 1 || jenisPresensi !== 'Masuk') {
                 kotakSesi.classList.add('hidden');
                 sesiTerpilih = 1;
                 return;
@@ -461,7 +541,7 @@
                 const tombol = document.createElement('button');
                 tombol.type = 'button';
                 tombol.innerText = 'Sesi ' + s;
-                tombol.className = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 transition-all';
+                tombol.className = STYLE_SESI_NONAKTIF;
                 tombol.onclick = () => pilihSesi(s, tombol);
                 daftar.appendChild(tombol);
             }
@@ -470,14 +550,12 @@
 
         function pilihSesi(s, tombolDiklik) {
             sesiTerpilih = s;
-            document.querySelectorAll('#daftarTombolSesi button').forEach(b => {
-                b.className = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-gray-200 text-gray-500 transition-all';
-            });
-            tombolDiklik.className = 'py-1.5 rounded-lg text-[11px] font-bold border-2 border-[#022c22] bg-[#022c22] text-white transition-all';
+            document.querySelectorAll('#daftarTombolSesi button').forEach(b => { b.className = STYLE_SESI_NONAKTIF; });
+            tombolDiklik.className = STYLE_SESI_AKTIF;
             perbaruiTombolRekam();
         }
 
-        // ---------- REKAM: kirim ke Apps Script (URL diri sendiri) lewat fetch() ----------
+        // ---------- REKAM: kirim ke Apps Script lewat fetch() ----------
         function rekamPresensi() {
             const btn = document.getElementById('btnRekam');
             const label = document.getElementById('labelBtnRekam');
@@ -490,6 +568,23 @@
             label.innerText = 'Menyimpan presensi... ⏳';
             pesan.classList.add('hidden');
             tampilkanLoadingProses('Sedang memproses data presensi');
+
+            // ---------- SAKIT / IZIN: tanpa foto wajah & tanpa syarat lokasi ----------
+            if (adaNonHadir()) {
+                const payloadNonHadir = {
+                    nipy: nipy,
+                    jenis: jenisPresensi,            // 'Sakit' atau 'Izin'
+                    sesi: 1,
+                    keterangan: document.getElementById('inputAlasan').value.trim(),
+                    fotoSurat: jenisPresensi === 'Sakit' ? fotoSuratBase64 : null,
+                    latitude: window._koordinatTerakhir ? window._koordinatTerakhir.lat : null,
+                    longitude: window._koordinatTerakhir ? window._koordinatTerakhir.lng : null,
+                    jarakMeter: jarakSaatIni,
+                    namaLokasi: namaLokasiTerdekat
+                };
+                kirimPresensiDenganRetry(payloadNonHadir, 1, btn, label, pesan, inputNipyEl);
+                return;
+            }
 
             const canvasFoto = document.createElement('canvas');
             canvasFoto.width = videoEl.videoWidth; canvasFoto.height = videoEl.videoHeight;
@@ -523,7 +618,7 @@
             const payload = {
                 nipy: nipy,
                 jenis: jenisPresensi,
-                sesi: jenisPresensi === 'Pulang' ? 1 : (sesiTerpilih || 1), // Pulang selalu sesi 1, tidak tergantung pilihan sesi
+                sesi: jenisPresensi === 'Masuk' ? (sesiTerpilih || 1) : 1, // hanya Masuk yang punya pilihan sesi
                 latitude: window._koordinatTerakhir ? window._koordinatTerakhir.lat : null,
                 longitude: window._koordinatTerakhir ? window._koordinatTerakhir.lng : null,
                 jarakMeter: jarakSaatIni,
@@ -549,7 +644,9 @@
 
         function kirimPresensiDenganRetry(payload, percobaanKe, btn, label, pesan, inputNipyEl) {
             if (percobaanKe === 1) {
-                tampilkanLoadingProses('Sedang memproses data presensi');
+                tampilkanLoadingProses(payload.jenis === 'Sakit' || payload.jenis === 'Izin'
+                    ? 'Sedang mengirim keterangan'
+                    : 'Sedang memproses data presensi');
             } else {
                 tampilkanLoadingProses('Mencoba lagi (percobaan ' + percobaanKe + '/' + MAKS_PERCOBAAN + ')');
             }
@@ -574,12 +671,14 @@
 
                 sembunyikanLoadingProses();
                 inputNipyEl.disabled = false;
-                label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
                 pesan.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-emerald-50', 'text-emerald-700');
 
                 if (res.success) {
                     // Getar HP kalau didukung perangkat
                     if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+
+                    const barisRingkasan = `📊 Bulan ini: ${res.hadirBulanIni ?? 0} Hadir · ${res.terlambatBulanIni ?? 0} Terlambat`
+                        + ` · ${res.sakitBulanIni ?? 0} Sakit · ${res.izinBulanIni ?? 0} Izin`;
 
                     pesan.className = 'mt-3 sm:mt-4 rounded-xl text-center kartu-animasi bg-emerald-50 p-4 sm:p-5';
                     pesan.innerHTML = `
@@ -587,12 +686,22 @@
                             <circle cx="26" cy="26" r="24" fill="none" stroke="#10b981" stroke-width="3"/>
                             <path class="centang-sukses" d="M15 27l7 7 15-15" fill="none" stroke="#10b981" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
-                        <p class="text-emerald-700 font-black text-sm sm:text-base">${res.message}</p>
-                        <p class="text-emerald-600/80 text-[11px] sm:text-xs font-bold mt-2">📊 Bulan ini: ${res.hadirBulanIni ?? 0} Hadir · ${res.terlambatBulanIni ?? 0} Terlambat</p>
+                        <p class="text-emerald-700 font-black text-sm sm:text-base"></p>
+                        <p class="text-emerald-600/80 text-[11px] sm:text-xs font-bold mt-2"></p>
                     `;
+                    // Isi teks lewat innerText supaya aman dari HTML injection
+                    const teksEls = pesan.querySelectorAll('p');
+                    teksEls[0].innerText = res.message;
+                    teksEls[1].innerText = barisRingkasan;
+
+                    // Reset form
                     document.getElementById('inputNipy').value = '';
                     document.getElementById('kotakNama').classList.add('hidden');
                     document.getElementById('kotakSesi').classList.add('hidden');
+                    document.getElementById('inputAlasan').value = '';
+                    document.getElementById('inputSurat').value = '';
+                    document.getElementById('previewSurat').classList.add('hidden');
+                    fotoSuratBase64 = null;
                     jumlahSesiAktif = 1;
                     sesiTerpilih = 1;
                 } else {
@@ -612,7 +721,6 @@
 
                 sembunyikanLoadingProses();
                 inputNipyEl.disabled = false;
-                label.innerText = '📸 Rekam Presensi ' + jenisPresensi;
                 pesan.classList.remove('hidden');
                 pesan.className = 'mt-4 text-sm font-bold p-4 rounded-xl text-center bg-red-50 text-red-600';
                 pesan.innerText = '⚠️ Gagal terhubung ke server setelah ' + percobaanKe + 'x percobaan: ' + err.message;
