@@ -163,13 +163,14 @@
             <button type="button" id="btnPulang" onclick="pilihJenis('Pulang')" class="py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all">Presensi Pulang</button>
             <button type="button" id="btnSakit" onclick="pilihJenis('Sakit')" class="py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all">🤒 Sakit</button>
             <button type="button" id="btnIzin" onclick="pilihJenis('Izin')" class="py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all">📝 Izin</button>
+            <button type="button" id="btnDinas" onclick="pilihJenis('Dinas Keluar')" class="col-span-2 py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all">🚗 Dinas Keluar</button>
         </div>
 
         <div id="kotakKeterangan" class="hidden mb-2 sm:mb-3 kartu-animasi">
-            <label class="block text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1">Alasan / Keterangan</label>
+            <label class="block text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1" id="labelAlasan">Alasan / Keterangan</label>
             <textarea id="inputAlasan" rows="2" maxlength="500" placeholder="Tulis alasan singkat..." class="w-full px-3 py-2 bg-gray-50 border border-emerald-100 rounded-xl text-[#022c22] outline-none focus:border-[#d4af37] text-xs sm:text-sm font-semibold"></textarea>
             <div id="kotakSurat" class="hidden mt-1.5">
-                <label class="block text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1">Foto Surat Dokter (wajib)</label>
+                <label class="block text-gray-700 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1" id="labelSurat">Foto Surat Dokter (wajib)</label>
                 <input type="file" id="inputSurat" accept="image/*" class="w-full text-[10px] sm:text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[#022c22] file:text-white file:font-bold">
                 <img id="previewSurat" alt="Preview surat" class="hidden mt-1.5 max-h-24 mx-auto rounded-lg border border-gray-200">
             </div>
@@ -230,6 +231,10 @@
 
         // Sakit / Izin = tidak hadir: tidak butuh wajah & lokasi
         function adaNonHadir() { return jenisPresensi === 'Sakit' || jenisPresensi === 'Izin'; }
+        // Dinas Keluar: tetap selfie + GPS tercatat, tapi TIDAK dicek radius kantor
+        function adaDinas() { return jenisPresensi === 'Dinas Keluar'; }
+        function butuhKeterangan() { return adaNonHadir() || adaDinas(); }
+        const ID_TOMBOL_JENIS = { 'Masuk': 'btnMasuk', 'Pulang': 'btnPulang', 'Sakit': 'btnSakit', 'Izin': 'btnIzin', 'Dinas Keluar': 'btnDinas' };
 
         // ---------- JAM REAL-TIME ----------
         function updateJamRealtime() {
@@ -273,13 +278,29 @@
         // ---------- PILIH JENIS: Masuk / Pulang / Sakit / Izin ----------
         function pilihJenis(jenis) {
             jenisPresensi = jenis;
-            ['Masuk', 'Pulang', 'Sakit', 'Izin'].forEach(j => {
-                document.getElementById('btn' + j).className = (j === jenis) ? STYLE_AKTIF : STYLE_NONAKTIF;
+            Object.keys(ID_TOMBOL_JENIS).forEach(j => {
+                const el = document.getElementById(ID_TOMBOL_JENIS[j]);
+                const aktif = (j === jenis);
+                el.className = (aktif ? STYLE_AKTIF : STYLE_NONAKTIF) + (j === 'Dinas Keluar' ? ' col-span-2' : '');
             });
 
-            // Kotak alasan tampil untuk Sakit & Izin; kotak surat hanya untuk Sakit
-            document.getElementById('kotakKeterangan').classList.toggle('hidden', !adaNonHadir());
-            document.getElementById('kotakSurat').classList.toggle('hidden', jenis !== 'Sakit');
+            // Kotak keterangan tampil untuk Sakit, Izin & Dinas Keluar.
+            // Kotak surat: Sakit (wajib) dan Dinas Keluar (opsional, surat tugas).
+            document.getElementById('kotakKeterangan').classList.toggle('hidden', !butuhKeterangan());
+            document.getElementById('kotakSurat').classList.toggle('hidden', jenis !== 'Sakit' && jenis !== 'Dinas Keluar');
+
+            const labelAlasan = document.getElementById('labelAlasan');
+            const labelSurat = document.getElementById('labelSurat');
+            const inputAlasan = document.getElementById('inputAlasan');
+            if (jenis === 'Dinas Keluar') {
+                labelAlasan.innerText = 'Tujuan / Kegiatan Dinas';
+                inputAlasan.placeholder = 'Contoh: Rapat KKM di MTs Negeri 1...';
+                labelSurat.innerText = 'Foto Surat Tugas (opsional)';
+            } else {
+                labelAlasan.innerText = 'Alasan / Keterangan';
+                inputAlasan.placeholder = 'Tulis alasan singkat...';
+                labelSurat.innerText = 'Foto Surat Dokter (wajib)';
+            }
 
             // Pemilih sesi HANYA berlaku untuk "Masuk". Untuk jenis lain sesi tidak
             // relevan, jadi kotaknya disembunyikan dan sesiTerpilih dipaksa 1.
@@ -451,22 +472,29 @@
             const tampilkanLabelSesi = jenisPresensi === 'Masuk' && jumlahSesiAktif > 1;
 
             const alasanOk = alasan.length >= 5;
+            const dinas = adaDinas();
             const suratOk = jenisPresensi !== 'Sakit' || !!fotoSuratBase64;
+            const gpsAda = !!window._koordinatTerakhir;
             const siap = nonHadir
                 ? (nipy !== '' && alasanOk && suratOk)
-                : (wajahTerdeteksi && lokasiValid && nipy !== '' && sesiSudahDipilih);
+                : dinas
+                    ? (wajahTerdeteksi && gpsAda && nipy !== '' && alasanOk)   // tanpa syarat radius
+                    : (wajahTerdeteksi && lokasiValid && nipy !== '' && sesiSudahDipilih);
 
             if (siap) {
                 btn.disabled = false;
                 btn.className = STYLE_REKAM_AKTIF;
                 label.innerText = nonHadir
                     ? '📝 Kirim Keterangan ' + jenisPresensi
-                    : '📸 Rekam Presensi ' + jenisPresensi + (tampilkanLabelSesi ? ' (Sesi ' + sesiTerpilih + ')' : '');
+                    : dinas
+                        ? '📸 Kirim Dinas Keluar'
+                        : '📸 Rekam Presensi ' + jenisPresensi + (tampilkanLabelSesi ? ' (Sesi ' + sesiTerpilih + ')' : '');
             } else {
                 btn.disabled = true;
                 btn.className = STYLE_REKAM_MATI;
                 if (!nipy) label.innerText = 'Isi NIPY terlebih dahulu';
                 else if (nonHadir) label.innerText = !alasanOk ? 'Isi alasan terlebih dahulu' : 'Unggah foto surat dokter';
+                else if (dinas) label.innerText = !alasanOk ? 'Isi tujuan dinas terlebih dahulu' : (!wajahTerdeteksi ? 'Menunggu wajah terdeteksi...' : 'Menunggu GPS...');
                 else if (!sesiSudahDipilih) label.innerText = 'Pilih sesi terlebih dahulu';
                 else if (!wajahTerdeteksi) label.innerText = 'Menunggu wajah terdeteksi...';
                 else label.innerText = 'Menunggu lokasi valid...';
@@ -597,7 +625,10 @@
             const sekarangFoto = new Date();
             const teksTanggal = sekarangFoto.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
             const teksJam = sekarangFoto.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const teksCabang = namaLokasiTerdekat || '-';
+            const koordFoto = window._koordinatTerakhir;
+            const teksCabang = (adaDinas() && koordFoto)
+                ? 'Dinas Keluar · ' + koordFoto.lat.toFixed(5) + ', ' + koordFoto.lng.toFixed(5)
+                : (namaLokasiTerdekat || '-');
             const tinggiBar = Math.round(canvasFoto.height * 0.14);
             const ukuranFontBesar = Math.max(14, Math.round(canvasFoto.width * 0.045));
             const ukuranFontKecil = Math.max(11, Math.round(canvasFoto.width * 0.032));
@@ -623,7 +654,10 @@
                 longitude: window._koordinatTerakhir ? window._koordinatTerakhir.lng : null,
                 jarakMeter: jarakSaatIni,
                 namaLokasi: namaLokasiTerdekat,
-                foto: fotoBase64
+                foto: fotoBase64,
+                // Hanya terisi untuk Dinas Keluar (surat tugas opsional)
+                keterangan: adaDinas() ? document.getElementById('inputAlasan').value.trim() : '',
+                fotoSurat: adaDinas() ? fotoSuratBase64 : null
             };
 
             kirimPresensiDenganRetry(payload, 1, btn, label, pesan, inputNipyEl);
@@ -678,7 +712,7 @@
                     if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
 
                     const barisRingkasan = `📊 Bulan ini: ${res.hadirBulanIni ?? 0} Hadir · ${res.terlambatBulanIni ?? 0} Terlambat`
-                        + ` · ${res.sakitBulanIni ?? 0} Sakit · ${res.izinBulanIni ?? 0} Izin`;
+                        + ` · ${res.sakitBulanIni ?? 0} Sakit · ${res.izinBulanIni ?? 0} Izin · ${res.dinasBulanIni ?? 0} Dinas`;
 
                     pesan.className = 'mt-3 sm:mt-4 rounded-xl text-center kartu-animasi bg-emerald-50 p-4 sm:p-5';
                     pesan.innerHTML = `
