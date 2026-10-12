@@ -206,6 +206,14 @@
         const RADIUS_METER = 200;          // SESUAIKAN: radius toleransi (meter), samakan dengan Code.gs
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
 
+        // ---------- PENGATURAN TOMBOL SESI "MENDEKATI JAMNYA SAJA" ----------
+        // Tombol sebuah sesi mulai tampil TOLERANSI_SEBELUM_MENIT sebelum jam
+        // standarnya, dan tetap tampil sampai TOLERANSI_SEBELUM_MENIT sebelum
+        // sesi berikutnya mulai. Untuk sesi TERAKHIR, tetap tampil sampai
+        // TOLERANSI_SESI_TERAKHIR_MENIT setelah jamnya (jaga-jaga telat jauh).
+        const TOLERANSI_SEBELUM_MENIT = 30;
+        const TOLERANSI_SESI_TERAKHIR_MENIT = 180;
+
         // Gaya tombol jenis presensi (aktif / tidak aktif)
         const STYLE_AKTIF = 'py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-[#022c22] bg-[#022c22] text-white transition-all';
         const STYLE_NONAKTIF = 'py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-gray-200 text-gray-500 transition-all';
@@ -226,6 +234,7 @@
         let timerCekNipy = null;
         let namaPegawaiAktif = null;
         let jumlahSesiAktif = 1;
+        let jamSesiAktif = [];      // daftar jam standar ("HH:mm") tiap sesi pegawai yang sedang aktif
         let sesiTerpilih = 1;
         let fotoSuratBase64 = null;
 
@@ -307,7 +316,7 @@
             const kotakSesi = document.getElementById('kotakSesi');
             if (jenis === 'Masuk' && jumlahSesiAktif > 1) {
                 sesiTerpilih = null;
-                tampilkanPemilihSesi(jumlahSesiAktif);
+                tampilkanPemilihSesi(jumlahSesiAktif, jamSesiAktif);
             } else {
                 kotakSesi.classList.add('hidden');
                 sesiTerpilih = 1;
@@ -507,6 +516,7 @@
             const nipy = document.getElementById('inputNipy').value.trim();
             namaPegawaiAktif = null;
             jumlahSesiAktif = 1;
+            jamSesiAktif = [];
             sesiTerpilih = 1;
             document.getElementById('kotakSesi').classList.add('hidden');
 
@@ -538,10 +548,11 @@
                 if (res.success) {
                     namaPegawaiAktif = res.nama;
                     jumlahSesiAktif = res.jumlahSesi || 1;
+                    jamSesiAktif = res.daftarJamSesi || [];
                     kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-emerald-50 text-emerald-700';
                     kotak.innerText = `👋 ${sapaanSaatIni()}, ${res.nama}!`;
                     // Pemilih sesi hanya untuk Masuk
-                    if (jenisPresensi === 'Masuk') tampilkanPemilihSesi(jumlahSesiAktif);
+                    if (jenisPresensi === 'Masuk') tampilkanPemilihSesi(jumlahSesiAktif, jamSesiAktif);
                 } else {
                     kotak.className = 'block mt-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-center kartu-animasi bg-red-50 text-red-500';
                     kotak.innerText = '⚠️ ' + res.message;
@@ -553,19 +564,46 @@
             });
         }
 
-        // Tampilkan tombol pilih sesi HANYA untuk pegawai dengan lebih dari 1 sesi/hari
-        // DAN hanya saat jenisnya "Masuk".
-        function tampilkanPemilihSesi(jumlahSesi) {
-            const kotakSesi = document.getElementById('kotakSesi');
-            const daftar = document.getElementById('daftarTombolSesi');
-            if (jumlahSesi <= 1 || jenisPresensi !== 'Masuk') {
-                kotakSesi.classList.add('hidden');
-                sesiTerpilih = 1;
-                return;
+        // Menentukan sesi mana yang "mendekati jamnya" dibanding waktu sekarang.
+        // Jendela tiap sesi: dari (jam sesi - TOLERANSI_SEBELUM_MENIT) sampai
+        // (jam sesi berikutnya - TOLERANSI_SEBELUM_MENIT), atau untuk sesi
+        // terakhir sampai (jam sesi + TOLERANSI_SESI_TERAKHIR_MENIT).
+        // Kalau waktu sekarang di luar semua jendela, kembalikan sesi dengan
+        // jam yang paling dekat ke waktu sekarang.
+        function sesiAktifSekarang(daftarJamSesi) {
+            if (!daftarJamSesi || daftarJamSesi.length <= 1) return [1];
+            const now = new Date();
+            const menitSekarang = now.getHours() * 60 + now.getMinutes();
+            const menitMulai = daftarJamSesi.map(jam => {
+                const bagian = jam.split(':');
+                return Number(bagian[0]) * 60 + Number(bagian[1]);
+            });
+
+            let idxAktif = -1;
+            for (let i = 0; i < menitMulai.length; i++) {
+                const batasMulai = menitMulai[i] - TOLERANSI_SEBELUM_MENIT;
+                const batasAkhir = (i < menitMulai.length - 1)
+                    ? menitMulai[i + 1] - TOLERANSI_SEBELUM_MENIT
+                    : menitMulai[i] + TOLERANSI_SESI_TERAKHIR_MENIT;
+                if (menitSekarang >= batasMulai && menitSekarang < batasAkhir) { idxAktif = i; break; }
             }
+            if (idxAktif === -1) {
+                let jarakTerkecil = Infinity;
+                menitMulai.forEach((m, i) => {
+                    const jarak = Math.abs(m - menitSekarang);
+                    if (jarak < jarakTerkecil) { jarakTerkecil = jarak; idxAktif = i; }
+                });
+            }
+            return [idxAktif + 1]; // 1-based
+        }
+
+        // Menggambar ulang tombol-tombol sesi. sesiTampil = null berarti
+        // tampilkan SEMUA sesi (dipakai saat pegawai klik "Pilih sesi lain");
+        // sesiTampil = [n] berarti hanya tombol Sesi n yang dirender.
+        function renderTombolSesi(daftar, jumlahSesi, sesiTampil) {
             daftar.innerHTML = '';
-            sesiTerpilih = null; // wajib pilih dulu sebelum bisa presensi
             for (let s = 1; s <= jumlahSesi; s++) {
+                if (sesiTampil && sesiTampil.indexOf(s) === -1) continue;
                 const tombol = document.createElement('button');
                 tombol.type = 'button';
                 tombol.innerText = 'Sesi ' + s;
@@ -573,7 +611,42 @@
                 tombol.onclick = () => pilihSesi(s, tombol);
                 daftar.appendChild(tombol);
             }
+        }
+
+        // Tampilkan tombol pilih sesi HANYA untuk pegawai dengan lebih dari 1 sesi/hari
+        // DAN hanya saat jenisnya "Masuk". Secara default hanya SATU tombol (sesi
+        // yang mendekati jamnya) yang tampil, supaya pegawai tidak salah klik sesi
+        // lain. Tautan "Pilih sesi lain" di bawahnya membuka semua tombol untuk
+        // kasus susulan/khusus.
+        function tampilkanPemilihSesi(jumlahSesi, daftarJamSesi) {
+            const kotakSesi = document.getElementById('kotakSesi');
+            const daftar = document.getElementById('daftarTombolSesi');
+            if (jumlahSesi <= 1 || jenisPresensi !== 'Masuk') {
+                kotakSesi.classList.add('hidden');
+                sesiTerpilih = 1;
+                return;
+            }
+
+            const sesiDisarankan = sesiAktifSekarang(daftarJamSesi);
+            renderTombolSesi(daftar, jumlahSesi, sesiDisarankan);
+            sesiTerpilih = null; // wajib pilih dulu sebelum bisa presensi
             kotakSesi.classList.remove('hidden');
+
+            let tautan = document.getElementById('tautanSemuaSesi');
+            if (!tautan) {
+                tautan = document.createElement('button');
+                tautan.type = 'button';
+                tautan.id = 'tautanSemuaSesi';
+                tautan.className = 'text-[9px] text-gray-400 font-bold underline mt-1 block mx-auto';
+                kotakSesi.appendChild(tautan);
+            }
+            let semuaDitampilkan = false;
+            tautan.innerText = 'Pilih sesi lain';
+            tautan.onclick = () => {
+                semuaDitampilkan = !semuaDitampilkan;
+                renderTombolSesi(daftar, jumlahSesi, semuaDitampilkan ? null : sesiDisarankan);
+                tautan.innerText = semuaDitampilkan ? 'Sembunyikan' : 'Pilih sesi lain';
+            };
         }
 
         function pilihSesi(s, tombolDiklik) {
@@ -737,6 +810,7 @@
                     document.getElementById('previewSurat').classList.add('hidden');
                     fotoSuratBase64 = null;
                     jumlahSesiAktif = 1;
+                    jamSesiAktif = [];
                     sesiTerpilih = 1;
                 } else {
                     pesan.className = 'mt-3 sm:mt-4 text-xs sm:text-sm font-bold p-3 sm:p-4 rounded-xl text-center kartu-animasi bg-red-50 text-red-600';
