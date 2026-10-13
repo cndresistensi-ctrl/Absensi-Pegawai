@@ -206,13 +206,10 @@
         const RADIUS_METER = 200;          // SESUAIKAN: radius toleransi (meter), samakan dengan Code.gs
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
 
-        // ---------- PENGATURAN TOMBOL SESI "MENDEKATI JAMNYA SAJA" ----------
-        // Tombol sebuah sesi mulai tampil TOLERANSI_SEBELUM_MENIT sebelum jam
-        // standarnya, dan tetap tampil sampai TOLERANSI_SEBELUM_MENIT sebelum
-        // sesi berikutnya mulai. Untuk sesi TERAKHIR, tetap tampil sampai
-        // TOLERANSI_SESI_TERAKHIR_MENIT setelah jamnya (jaga-jaga telat jauh).
-        const TOLERANSI_SEBELUM_MENIT = 30;
-        const TOLERANSI_SESI_TERAKHIR_MENIT = 180;
+        // ---------- PENGATURAN TOMBOL SESI (KUMULATIF & BERURUTAN) ----------
+        // Sesi 1 selalu tampil. Sesi berikutnya baru ikut tampil begitu waktu
+        // sekarang melewati 1 menit setelah jam standar sesi sebelumnya, dan
+        // sesi yang sudah tampil tidak pernah hilang. Lihat sesiAktifSekarang().
 
         // Gaya tombol jenis presensi (aktif / tidak aktif)
         const STYLE_AKTIF = 'py-2 rounded-xl font-black text-[11px] sm:text-xs border-2 border-[#022c22] bg-[#022c22] text-white transition-all';
@@ -564,37 +561,29 @@
             });
         }
 
-        // Menentukan sesi mana yang "mendekati jamnya" dibanding waktu sekarang.
-        // Jendela tiap sesi: dari (jam sesi - TOLERANSI_SEBELUM_MENIT) sampai
-        // (jam sesi berikutnya - TOLERANSI_SEBELUM_MENIT), atau untuk sesi
-        // terakhir sampai (jam sesi + TOLERANSI_SESI_TERAKHIR_MENIT).
-        // Kalau waktu sekarang di luar semua jendela, kembalikan sesi dengan
-        // jam yang paling dekat ke waktu sekarang.
+        // Menentukan sesi mana saja yang sudah "waktunya" dibanding sekarang,
+        // secara KUMULATIF: semua sesi yang jamnya sudah dekat/lewat ikut tampil.
+        function sesiKeMenit(jam) {
+            const bagian = jam.split(':');
+            return Number(bagian[0]) * 60 + Number(bagian[1]);
+        }
+
         function sesiAktifSekarang(daftarJamSesi) {
             if (!daftarJamSesi || daftarJamSesi.length <= 1) return [1];
             const now = new Date();
             const menitSekarang = now.getHours() * 60 + now.getMinutes();
-            const menitMulai = daftarJamSesi.map(jam => {
-                const bagian = jam.split(':');
-                return Number(bagian[0]) * 60 + Number(bagian[1]);
-            });
 
-            let idxAktif = -1;
-            for (let i = 0; i < menitMulai.length; i++) {
-                const batasMulai = menitMulai[i] - TOLERANSI_SEBELUM_MENIT;
-                const batasAkhir = (i < menitMulai.length - 1)
-                    ? menitMulai[i + 1] - TOLERANSI_SEBELUM_MENIT
-                    : menitMulai[i] + TOLERANSI_SESI_TERAKHIR_MENIT;
-                if (menitSekarang >= batasMulai && menitSekarang < batasAkhir) { idxAktif = i; break; }
+            // KUMULATIF & BERURUTAN: Sesi 1 selalu tampil sejak awal. Sesi ke-N
+            // (N>=2) baru ditambahkan begitu waktu sekarang melewati 1 menit
+            // setelah jam standar Sesi (N-1) — contoh: Sesi 1 jam 07:05 ->
+            // Sesi 2 muncul mulai 07:06, Sesi 2 jam 07:15 -> Sesi 3 muncul mulai
+            // 07:16, dan seterusnya. Sesi yang sudah muncul TIDAK PERNAH hilang.
+            const hasil = [1];
+            for (let i = 1; i < daftarJamSesi.length; i++) {
+                const ambangMulai = sesiKeMenit(daftarJamSesi[i - 1]) + 1;
+                if (menitSekarang >= ambangMulai) hasil.push(i + 1); // 1-based
             }
-            if (idxAktif === -1) {
-                let jarakTerkecil = Infinity;
-                menitMulai.forEach((m, i) => {
-                    const jarak = Math.abs(m - menitSekarang);
-                    if (jarak < jarakTerkecil) { jarakTerkecil = jarak; idxAktif = i; }
-                });
-            }
-            return [idxAktif + 1]; // 1-based
+            return hasil;
         }
 
         // Menggambar ulang tombol-tombol sesi. sesiTampil = null berarti
